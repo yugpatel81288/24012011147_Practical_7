@@ -1,41 +1,41 @@
 package com.example.a24012011147_practical_7
 
-// !! ERROR FIXED: Added all missing imports
+
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import java.util.ArrayList
+import com.example.a24012011147_practical_7.databinding.ItemPersonBinding
 
 class PersonAdapter(
-    private val context: MainActivity,
-    private val array: ArrayList<Person>
-) : RecyclerView.Adapter<PersonAdapter.PersonViewHolder>() {
+    private val persons: ArrayList<Person>,
+    private val onDelete: (Person) -> Unit
+) : RecyclerView.Adapter<PersonAdapter.ViewHolder>() {
 
-    inner class PersonViewHolder(val bindingView: View) : RecyclerView.ViewHolder(bindingView)
+    class ViewHolder(val binding: ItemPersonBinding) : RecyclerView.ViewHolder(binding.root)
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PersonViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.single_item, parent, false)
-        return PersonViewHolder(view)
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val binding = ItemPersonBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return ViewHolder(binding)
     }
 
-    override fun getItemCount(): Int = array.size
+    override fun getItemCount(): Int = persons.size
 
-    override fun onBindViewHolder(holder: PersonViewHolder, position: Int) {
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        val person = persons[position]
+        with(holder.binding) {
+            textName.text = person.name
+            textPhone.text = person.phoneNo
+            textEmail.text = person.emailId
+            textAddress.text = person.address
 
-        val person = array[position]
-
-        holder.bindingView.findViewById<TextView>(R.id.textview__phone_no).text = person.phoneNo
-        holder.bindingView.findViewById<TextView>(R.id.textview_name).text = person.name
-        holder.bindingView.findViewById<TextView>(R.id.textview_email).text = person.emailId
-        holder.bindingView.findViewById<TextView>(R.id.textview_address).text = person.address
-
-        holder.bindingView.findViewById<Button>(R.id.button_delete).setOnClickListener {
-            // This will now work
-            context.deletePerson(holder.adapterPosition)
+            buttonDelete.setOnClickListener {
+                val pos = holder.bindingAdapterPosition
+                if (pos != RecyclerView.NO_POSITION) {
+                    onDelete(persons[pos])
+                    persons.removeAt(pos)
+                    notifyItemRemoved(pos)
+                }
+            }
         }
     }
 }

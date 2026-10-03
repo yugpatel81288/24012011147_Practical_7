@@ -1,149 +1,85 @@
 package com.example.a24012011147_practical_7
+
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuItem
 import android.widget.Toast
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.Toolbar // <-- Make sure this import is present
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.floatingactionbutton.FloatingActionButton
-import kotlinx.coroutines.*
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.example.a24012011147_practical_7.databinding.ActivityMainBinding
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import org.json.JSONException
-import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
-    val personList = ArrayList<Person>()
-    lateinit var personsRecycleAdapter: PersonAdapter
-    lateinit var db: DatabaseHelper
+    private lateinit var binding: ActivityMainBinding
+    private lateinit var db: DatabaseHelper
+    private lateinit var adapter: PersonAdapter
+    private val persons = ArrayList<Person>()
+
+    private val apiUrl = "https://api.json-generator.com/templates/5rDXHcbgpo93/data"
+    private val apiToken = "d7wrtfqywyhu7y2bcbsz3cgjpbfisuhnmbibvgvf"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContentView(R.layout.activity_main)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        // Set toolbar as action bar
-        val toolbar = findViewById<Toolbar>(R.id.toolbar)
-        setSupportActionBar(toolbar)
+        db = DatabaseHelper(this)
+        adapter = PersonAdapter(persons) { person -> db.deletePerson(person) }
+        binding.recyclerView.layoutManager = LinearLayoutManager(this)
+        binding.recyclerView.adapter = adapter
 
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-            insets
-        }
+        binding.fabRefresh.setOnClickListener { fetchPersons() }
 
-        db = DatabaseHelper(applicationContext)
-
-        val recyclerView = findViewById<RecyclerView>(R.id.recyclerView1)
-        personsRecycleAdapter = PersonAdapter(this, personList)
-        recyclerView.adapter = personsRecycleAdapter
-
-        val fab = findViewById<FloatingActionButton>(R.id.fab)
-        fab.setOnClickListener {
-            getPersonDetailsFromSQLiteDb()
-        }
+        if (db.personsCount == 0) fetchPersons() else showPersons()
     }
 
-    private fun getPersonDetailsFromSQLiteDb() {
-        val personListFromDb = db.allPersons
-        personList.clear()
-        personList.addAll(personListFromDb)
-        personsRecycleAdapter.notifyDataSetChanged()
-        Toast.makeText(this, "Fetched from SQLite DB", Toast.LENGTH_SHORT).show()
+    private fun showPersons() {
+        persons.clear()
+        persons.addAll(db.allPersons)
+        adapter.notifyDataSetChanged()
     }
 
-    private fun networkDb() {
-        val JSON_URL = "https://api.json-generator.com/templates/k-ysq0j-b-P_/data"
-        val API_TOKEN = "b04r3k1044q3d31g0l1j3yv5s1n5f2vyg47n4a0g"
-
+    private fun fetchPersons() {
         CoroutineScope(Dispatchers.IO).launch {
-            val hr = HttpRequest()
-            val sJson = hr.makeServiceCall(JSON_URL, API_TOKEN)
-
+            val data = HttpRequest().makeServiceCall(apiUrl, apiToken)
+            val list = if (data != null) parsePersons(data) else null
+            if (list != null) {
+                db.deleteAll()
+                list.forEach { db.insertPerson(it) }
+            }
             withContext(Dispatchers.Main) {
-                // !! ERROR FIXED: Added null check to prevent sJson!! crash
-                if (sJson != null) {
-                    getPersonDetailsFromJson(sJson)
+                if (list == null) {
+                    Toast.makeText(this@MainActivity, "Failed to load data", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(applicationContext, "Network Error: Could not fetch data", Toast.LENGTH_LONG).show()
+                    showPersons()
                 }
             }
         }
     }
 
-    private fun getPersonDetailsFromJson(sJson: String) {
-        val size = personList.size
-        personList.clear()
-        personsRecycleAdapter.notifyItemRangeRemoved(0, size)
-
-        try {
-            val jsonArray = JSONArray(sJson)
-            for (i in 0 until jsonArray.length()) {
-
-                val jsonObject = jsonArray[i] as JSONObject
-                val person = Person(jsonObject) // This line can still crash, see Person.kt fix
-
-                personList.add(person)
-
-                try {
-                    if (db.getPerson(person.id) != null)
-                        db.updatePerson(person)
-                    else
-                        db.insertPerson(person)
-
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+    private fun parsePersons(json: String): ArrayList<Person>? {
+        return try {
+            val array = JSONArray(json)
+            val list = ArrayList<Person>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val profile = obj.getJSONObject("profile")
+                list.add(
+                    Person(
+                        obj.getString("id"),
+                        profile.getString("name"),
+                        obj.getString("email"),
+                        obj.getString("phone").replace("}", "").trim(),
+                        profile.getString("address")
+                    )
+                )
             }
-
-            personsRecycleAdapter.notifyItemRangeInserted(0, personList.size)
-
-        } catch (ee: JSONException) {
-            ee.printStackTrace()
-        }
-
-        Toast.makeText(this, "Fetch details from JSON", Toast.LENGTH_SHORT).show()
-    }
-
-    // !! ERROR FIXED: Added the missing deletePerson function
-    fun deletePerson(position: Int) {
-        try {
-            val person = personList[position]
-            db.deletePerson(person.id)
-            personList.removeAt(position)
-            personsRecycleAdapter.notifyItemRemoved(position)
-            personsRecycleAdapter.notifyItemRangeChanged(position, personList.size)
-            Toast.makeText(this, "${person.name} deleted", Toast.LENGTH_SHORT).show()
+            list
         } catch (e: Exception) {
-            e.printStackTrace()
-            Toast.makeText(this, "Error deleting person", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-
-    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
-        menuInflater.inflate(R.menu.main_menu, menu)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-
-            R.id.action_sqlitedb -> {
-                getPersonDetailsFromSQLiteDb()
-                true
-            }
-
-            R.id.action_nwdb -> {
-                networkDb()
-                true
-            }
-
-            else -> super.onOptionsItemSelected(item)
+            null
         }
     }
 }
